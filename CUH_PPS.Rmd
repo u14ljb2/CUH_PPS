@@ -1,0 +1,159 @@
+---
+title: "CUH_PPS"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+.libPaths("C:/RLib/library")
+
+library(readxl)
+library(tidyverse)
+library(lubridate)
+library(kableExtra)
+library(janitor)
+library(xlsx)
+
+```
+
+```{r get reference to workbooks}
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+PPSFileList = list.files(recursive = T, pattern = ".xlsx")
+
+```
+
+
+```{r}
+
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+
+
+
+wardPatientTable = tibble()
+#loop to extract all patient information
+for (i in 1 : length(PPSFileList)){
+  print(PPSFileList[i])
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+    newSheet = read_excel(PPSFileList[i], sheet = "Ward patient list ", skip = 8) %>%
+      mutate(ward = fileName,
+             `If neonate, record birth weight` = as.character(`If neonate, record birth weight`)) %>%
+       filter(str_detect(.[1], "^[0-9]+$") |  
+           !is.na(.[2]))
+    if(exists("wardPatientTable") == FALSE){
+      wardPatientTable = newSheet
+    } else{
+      wardPatientTable = bind_rows(wardPatientTable, newSheet[-(1)]) %>%
+        remove_empty("cols")
+    }
+}
+
+
+
+# #Loop to get antimicrobial use data
+# setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+# AbxList = tibble()
+# for (i in 1 : length(PPSFileList)){
+#   print(PPSFileList[i])
+#   fileName = str_split(PPSFileList[i], "/")[[1]][1]
+#   print(fileName)
+#   if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+#     newSheet = read_excel(PPSFileList[i], sheet = "Antimicrobial use data", skip = 6) %>%
+#       mutate(ward = fileName,
+#              across(.fns = as.character)
+#              # `Patient MRN` = case_when(!is.numeric(`Patient MRN`) ~ as.numeric(`Patient MRN`),
+#              #           TRUE ~ `Patient MRN`
+#              #           )
+#              )%>%
+#        filter(str_detect(.[1], "^[0-9]+$") |  
+#            !is.na(.[2]))
+#     if(exists("AbxList") == FALSE){
+#       AbxList = newSheet
+#     } else{
+#       AbxList = bind_rows(AbxList, newSheet) %>%
+#         remove_empty("cols")
+#     }
+#   }
+# }
+
+  
+setwd("\\\\net.addenbrookes.nhs.uk/root/Users2-6/bedforl/R_Projects/CUH_PPS")
+
+```
+
+```{r Data cleansing}
+
+#unite duplicated columns
+wardPatientTable2 = wardPatientTable %>%
+  mutate(`Name/initials` = replace_na(`Name/initials`, ""),
+         Initials = replace_na(Initials)) %>%
+  unite("Name", c("Initials", "Name/initials"), sep = "") %>%
+  unite(McCabe, c(`McCabe Score (see examples below this table)`, `McCabe Score`), remove = TRUE, na.rm = T) %>%
+  unite("Antimicrobials", contains("Antibiotic"), remove = TRUE, na.rm = T) %>%
+  unite("Antimicrobials", c(Antimicrobials, `Abx***`), remove = TRUE, na.rm = T) %>%
+  unite("Allergy Comments", c(`Allergy comments (optional)`, `Allergy comments`), remove = T, na.rm = T) %>%
+  unite("HCAI", c(`HAI****`, `Healthcare associated infection****`), na.rm = T) %>%
+  unite("PVC", c(PVC, `PVC (helpful if use 'cannula' as search term in Epic)`), na.rm = T) %>%
+  unite("PCV/CVC_documentation_Correct", contains(c("about PVC", "cannula", "CVC_documentation")), remove = T, na.rm = T) %>%
+  unite("urinary_cath_documentation_correct", contains(c("urinary catheters", "catheters in situ")), na.rm = T) %>%
+  rename("neonatal birth weight" = `If neonate, record birth weight`) %>%
+  mutate(Name = str_replace_all(pattern = ",", replacement = " ", string = .$Name))
+  
+#function for finding columns
+findSimilarColumnNames = function(dataframe, searchTerm){
+  listNames = names(select(dataframe,contains(searchTerm)))
+  return(listNames)
+}
+
+findSimilarColumnNames(wardPatientTable, "")
+
+findSimilarColumnNames(wardPatientTable2, "urinary catheters")))
+
+names(select(wardPatientTable,(contains(c("about PVC", "cannula", "PCV/CVC_documentation_Correct")))))
+
+
+```
+
+```{r Seperate Abx sheets}
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxList_1 = tibble()
+for (i in 1 : length(PPSFileList)){
+  print(PPSFileList[i])
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    newSheet = read_excel(PPSFileList[i], sheet = "Antimicrobial use data", range = "A7:M60") %>%
+      mutate(ward = fileName,
+             across(.fns = as.character)
+             )%>%
+       filter(str_detect(.[1], "^[0-9]+$") |
+           !is.na(.[2]))
+    if(exists("AbxList") == FALSE){
+      AbxList_1 = newSheet
+    } else{
+      AbxList = bind_rows(AbxList_1, newSheet) %>%
+        remove_empty("cols")
+    }
+  }
+}
+
+```
+
+
+
+
+```{r filter}
+
+#filter for getting all fully numerical records
+newSheet %>%
+  filter(str_detect(`no. of pts`, "^[0-9]+$") &
+           !is.na(Initials))
+```
+
+Write to new documents for export
+```{r}
+write.csv(wardPatientTable2, file = "PatientTable.csv", sep = "-")
+
+```
+
