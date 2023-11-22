@@ -13,9 +13,63 @@ library(tidyverse)
 library(lubridate)
 library(kableExtra)
 library(janitor)
-library(xlsx)
+#library(xlsx)
 
 ```
+
+```{r constants}
+cell_names_list = c("Patient MRN",                                                 
+                    "Antimicrobial (AM)                                  (generic name)",
+                    "Route",                                                         
+                    "Number of doses/day",                                               
+                    "Indication",                                                        
+                    "diagnosis",                                                         
+                    "reason_document",                                                   
+                    "Antimicrobial Review? (within 72hr after start)",                   
+                    "start_date",                                                        
+                    "ward",                                                              
+                    "List indication on Epic prescription",
+                    "no. of missed doses",
+                    "Reason for missed doses ",
+                    "Course length or stop date documented?",
+                    "guidance compliance (1-6)",
+                    "surgical prophylaxis for more than 24 hours",
+                    "allergy mismatch",
+                    "microbiology mismatch",
+                    "indication does not require ANY antimicrobials",
+                    "incorrect route",
+                    "incorrect frequency",
+                    "spectrum too broad",	
+                    "spectrum too narrow",	
+                    "if AM restricted, approval given",	
+                    "appropriateness")
+
+abx_names_list = c("antimicrobial_am_generic_name",
+                   "route",
+                   "number_of_doses_day",
+                   "indication",
+                   "diagnosis",
+                   "reason_document",
+                   "start_date",
+                   "antimicrobial_review_within_72hr_after_start",
+                   "no_of_missed_doses",
+                   "antimicrobial_change",
+                   "reason_for_missed_doses",
+                   "course_length_or_stop_date_documented",
+                   "guidance_compliance_1_6",
+                   "surgical_prophylaxis_for_more_than_24_hours",
+                   "allergy_mismatch",
+                   "microbiology_mismatch",
+                   "indication_does_not_require_any_antimicrobial",
+                   "incorrect_route",
+                   "incorrect_frequency",
+                   "spectrum_too_broad",
+                   "spectrum_too_narrow",
+                   "if_am_restricted_approval_given",
+                   "appropriateness")
+
+```
+
 
 ```{r get reference to workbooks}
 setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
@@ -24,7 +78,7 @@ PPSFileList = list.files(recursive = T, pattern = ".xlsx")
 ```
 
 
-```{r}
+```{r final workflow}
 
 setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
 
@@ -49,38 +103,320 @@ for (i in 1 : length(PPSFileList)){
     }
 }
 
+wardPatientTable2 = wardPatientTable %>%
+  mutate(`Name/initials` = replace_na(`Name/initials`, ""),
+         Initials = replace_na(Initials)) %>%
+  unite("Name", c("Initials", "Name/initials"), sep = "") %>%
+  unite(McCabe, c(`McCabe Score (see examples below this table)`, `McCabe Score`), remove = TRUE, na.rm = T) %>%
+  unite("Antimicrobials", contains("Antibiotic"), remove = TRUE, na.rm = T) %>%
+  unite("Antimicrobials", c(Antimicrobials, `Abx***`), remove = TRUE, na.rm = T) %>%
+ # unite("Allergy Comments", c(`Allergy comments (optional)`, `Allergy comments`), remove = T, na.rm = T) %>% (? no longer in data)
+  unite("HCAI", c(`HAI****`, `Healthcare associated infection****`), na.rm = T) %>%
+  unite("PVC", c(PVC, `PVC (helpful if use 'cannula' as search term in Epic)`), na.rm = T) %>%
+  unite("PCV/CVC_documentation_Correct", contains(c("about PVC", "cannula", "CVC_documentation")), remove = T, na.rm = T) %>%
+  unite("urinary_cath_documentation_correct", contains(c("urinary catheters", "catheters in situ")), na.rm = T) %>%
+  rename("neonatal birth weight" = `If neonate, record birth weight`) %>%
+  mutate(Name = str_replace_all(pattern = ",", replacement = " ", string = .$Name),
+         Antimicrobials = str_replace_all(.$Antimicrobials, replacement = "", pattern = "_"),
+         across(everything(), tolower))
 
+PPS_wizard_Tbble = wardPatientTable2 %>%
+  select( ward,
+          DoB,
+         `NHS no`,
+         `Hosp no`,
+         Sex,
+         Postcode,
+         `Adm. Date`,
+         Ethnicity,
+         Speciality,
+         `neonatal birth weight`,
+          `Surgery (since admission)`,
+         `NHSN surgical code (if required)`,
+         McCabe,
+         `Vaccinated against COVID-19?`,
+         CVC,
+         PVC,
+         `urinary catheter`,
+         Intubated,
+         `Allergies to any antimicrobial?`,
+         Antimicrobials,
+         HCAI
+        ) %>%
+  mutate(Pat_id = str_c(`Hosp no`, ward)) %>%
+  mutate(across(everything(), tolower)) %>%
+  mutate(across(everything(),.fns = ~str_replace(.,pattern = ",",replacement = " ")))
 
-# #Loop to get antimicrobial use data
-# setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
-# AbxList = tibble()
-# for (i in 1 : length(PPSFileList)){
-#   print(PPSFileList[i])
-#   fileName = str_split(PPSFileList[i], "/")[[1]][1]
-#   print(fileName)
-#   if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
-#     newSheet = read_excel(PPSFileList[i], sheet = "Antimicrobial use data", skip = 6) %>%
-#       mutate(ward = fileName,
-#              across(.fns = as.character)
-#              # `Patient MRN` = case_when(!is.numeric(`Patient MRN`) ~ as.numeric(`Patient MRN`),
-#              #           TRUE ~ `Patient MRN`
-#              #           )
-#              )%>%
-#        filter(str_detect(.[1], "^[0-9]+$") |  
-#            !is.na(.[2]))
-#     if(exists("AbxList") == FALSE){
-#       AbxList = newSheet
-#     } else{
-#       AbxList = bind_rows(AbxList, newSheet) %>%
-#         remove_empty("cols")
-#     }
-#   }
-# }
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxTest_3 = tibble()
+for (i in 1 : length(PPSFileList)){
+  print(PPSFileList[i])
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+  #if(!(fileName %in% c("Lewin Rehab"))){
+    newSheet = read_excel(PPSFileList[i], sheet = "Antimicrobial use data", range = "A7:Z60") %>%
+      remove_empty(c("cols", "rows"))%>%
+      mutate(ward = fileName,
+             across(.fns = as.character)
+             )%>%
+        filter(str_detect(.[1], "^[0-9]+$") |
+        !is.na(.[2]))
+      AbxTest_3 = bind_rows(AbxTest_3, newSheet) #%>%
+       # remove_empty("cols")
+        }
+
+AbxTest_3_cleaned = AbxTest_3 %>%
+  unite("Notes", contains("..."), na.rm =T) %>%
+  unite("start_date", contains(c("Date of AM started", "start date")), na.rm = T) %>%
+  unite("diagnosis", contains("diagnosis"), na.rm = T) %>%
+  unite("reason_document", contains("reason for a"), na.rm = T) %>%
+  unite("indication_does_not_require_any_antimicrobial", contains("indication does"), na.rm = T) %>%
+  mutate(Pat_id = str_c(`Patient MRN`, ward)) %>%
+   mutate(across(everything(), tolower)) %>%
+  clean_names() %>%
+  group_by(pat_id) %>%
+  mutate(abx_num = row_number())
+
+AbxTest_3_cleaned = AbxTest_3_cleaned %>%
+unite("antimicrobial_change", contains("changed_reason"), na.rm = T) 
+
+JointAbx_Pat = PPS_wizard_Tbble %>%
+  clean_names() %>%
+  left_join(AbxTest_3_cleaned, by = "pat_id") %>%
+  mutate(Antimicrobials = case_when(antimicrobials == "n" ~ "no",
+                                    antimicrobials == "y" ~ "yes",
+                                    TRUE~ antimicrobials))  %>% 
+  select(-`ward.y`,
+         Antimicrobials) %>%
+  mutate(across(everything(),.fns = ~str_replace_all(.,pattern = ",",replacement = " "))) %>%
+  mutate(sex = case_when(sex == "m" | sex == "male" ~ "Male",
+                         sex == "f" | sex == "female" ~ "Female"),
+         ethnicity_if_other = case_when(str_detect(ethnicity, "other")& 
+                                          (!str_detect(ethnicity, "black|asian|white|mixed")) ~ ethnicity
+                                        ),
+         ethnicity = case_when(str_detect(ethnicity, "white") ~ "White",
+                               str_detect(ethnicity, "asian") ~ "Asian or British Asian",
+                               str_detect(ethnicity, "black") ~ "Black Africa Caribbean or Black British",
+                               str_detect(ethnicity, "mixed") ~ "Mixed or Multiple Ethnic Groups",
+                               str_detect(ethnicity, "not|unknown") ~ " ",
+                               TRUE ~ "Other"),
+         surgery = case_when(str_detect(surgery_since_admission, "yes") ~ nhsn_surgical_code_if_required,
+                             TRUE ~ surgery_since_admission),
+           cvc = case_when(cvc == "y" ~ "Yes",
+                           cvc == "n" ~ "No",
+                           cvc == "?" ~ "Unknown"),
+         pvc = case_when(pvc == "y" ~ "Yes",
+                           pvc == "n" ~ "No",
+                           pvc == "?" ~ "Unknown"),
+         urinary_catheter = case_when(urinary_catheter == "y" ~ "Yes",
+                           urinary_catheter == "n" ~ "No",
+                           urinary_catheter == "?" ~ "Unknown"),
+         intubated = case_when(intubated == "y" ~ "Yes",
+                           intubated == "n" ~ "No",
+                           intubated == "?" ~ "Unknown"),
+         antimicrobials = case_when(antimicrobials == "y" ~ "Yes",
+                           antimicrobials == "n" ~ "No",
+                           antimicrobials == "?" ~ "Unknown"),
+         antimicrobials = case_when((!is.na(abx_num) | abx_num > 0) ~ "Yes",
+                                    TRUE ~ antimicrobials),
+         incorrect_route = case_when(incorrect_route == "y" ~ "Yes",
+                           incorrect_route == "n" ~ "No",
+                           incorrect_route == "?" ~ "Unknown"),
+         spectrum_too_broad = case_when(spectrum_too_broad == "y" ~ "Yes",
+                           spectrum_too_broad == "n" ~ "No",
+                           spectrum_too_broad == "?" ~ "Unknown"),
+         spectrum_too_narrow = case_when(spectrum_too_narrow == "y" ~ "Yes",
+                           spectrum_too_narrow == "n" ~ "No",
+                           spectrum_too_narrow == "?" ~ "Unknown")
+         
+  )
 
   
 setwd("\\\\net.addenbrookes.nhs.uk/root/Users2-6/bedforl/R_Projects/CUH_PPS")
 
 ```
+
+```{r A3 patients}
+a3_pts = JointAbx_Pat %>%
+  filter(ward.x =="a3") %>%
+  ungroup()
+
+a3_pts_final = a3_pts %>%
+  mutate(survey_date = "20/09/2023",
+         Reporting_Organisation_Code = "RGT") %>%
+  group_by(patient_mrn) %>%
+  mutate(how_many_antimicrobials = max(abx_num)) %>%
+  pivot_wider(names_from = abx_num, values_from = abx_names_list) %>%
+  ungroup() %>%
+  select(ward = ward.x,
+         do_b,
+         survey_date,
+         Reporting_Organisation_Code,
+         nhs_no,
+         hosp_no,
+         sex,
+         postcode,
+         adm_date,
+         ethnicity,
+         speciality,
+         surgery,
+         mc_cabe,
+         vaccinated_against_covid_19,
+         cvc,
+         pvc,
+         urinary_catheter,
+         intubated,
+         allergies_to_any_antimicrobial,
+         antimicrobials,
+         how_many_antimicrobials,
+         antimicrobial_am_generic_name_1,
+         route_1,
+         number_of_doses_day_1,
+         indication_1,
+         diagnosis_1,
+         start_date_1,
+         antimicrobial_review_within_72hr_after_start_1,
+         antimicrobial_change_1,
+         no_of_missed_doses_1,
+         reason_for_missed_doses_1,
+         course_length_or_stop_date_documented_1,
+         guidance_compliance_1_6_1,
+         surgical_prophylaxis_for_more_than_24_hours_1,
+         allergy_mismatch_1,
+         microbiology_mismatch_1,
+         indication_does_not_require_any_antimicrobial_1,
+         incorrect_route_1,
+         incorrect_frequency_1,
+         spectrum_too_broad_1,
+         spectrum_too_narrow_1,
+         appropriateness_1,
+         antimicrobial_am_generic_name_2,
+         route_2,
+         number_of_doses_day_2,
+         indication_2,
+         diagnosis_2,
+         start_date_2,
+         antimicrobial_review_within_72hr_after_start_2,
+         antimicrobial_change_2,
+         no_of_missed_doses_2,
+         reason_for_missed_doses_2,
+         course_length_or_stop_date_documented_2,
+         guidance_compliance_1_6_2,
+         surgical_prophylaxis_for_more_than_24_hours_2,
+         allergy_mismatch_2,
+         microbiology_mismatch_2,
+         indication_does_not_require_any_antimicrobial_2,
+         incorrect_route_2,
+         incorrect_frequency_2,
+         spectrum_too_broad_2,
+         spectrum_too_narrow_2,
+         appropriateness_2
+)
+
+
+```
+
+```{r remaining patients}
+
+AllRemainingWards = JointAbx_Pat %>%
+  filter(ward.x != "a3") %>%
+   mutate(survey_date = "20/09/2023",
+         Reporting_Organisation_Code = "RGT") %>%
+  group_by(patient_mrn) %>%
+  mutate(how_many_antimicrobials = max(abx_num)) %>%
+  pivot_wider(names_from = abx_num, values_from = abx_names_list) %>%
+  ungroup() %>%
+  select(ward = ward.x,
+         do_b,
+         survey_date,
+         Reporting_Organisation_Code,
+         nhs_no,
+         hosp_no,
+         sex,
+         postcode,
+         adm_date,
+         ethnicity,
+         speciality,
+         surgery,
+         mc_cabe,
+         vaccinated_against_covid_19,
+         cvc,
+         pvc,
+         urinary_catheter,
+         intubated,
+         allergies_to_any_antimicrobial,
+         antimicrobials,
+         how_many_antimicrobials,
+         antimicrobial_am_generic_name_1,
+         route_1,
+         number_of_doses_day_1,
+         indication_1,
+         diagnosis_1,
+         start_date_1,
+         antimicrobial_review_within_72hr_after_start_1,
+         antimicrobial_change_1,
+         no_of_missed_doses_1,
+         reason_for_missed_doses_1,
+         course_length_or_stop_date_documented_1,
+         guidance_compliance_1_6_1,
+         surgical_prophylaxis_for_more_than_24_hours_1,
+         allergy_mismatch_1,
+         microbiology_mismatch_1,
+         indication_does_not_require_any_antimicrobial_1,
+         incorrect_route_1,
+         incorrect_frequency_1,
+         spectrum_too_broad_1,
+         spectrum_too_narrow_1,
+         appropriateness_1,
+         antimicrobial_am_generic_name_2,
+         route_2,
+         number_of_doses_day_2,
+         indication_2,
+         diagnosis_2,
+         start_date_2,
+         antimicrobial_review_within_72hr_after_start_2,
+         antimicrobial_change_2,
+         no_of_missed_doses_2,
+         reason_for_missed_doses_2,
+         course_length_or_stop_date_documented_2,
+         guidance_compliance_1_6_2,
+         surgical_prophylaxis_for_more_than_24_hours_2,
+         allergy_mismatch_2,
+         microbiology_mismatch_2,
+         indication_does_not_require_any_antimicrobial_2,
+         incorrect_route_2,
+         incorrect_frequency_2,
+         spectrum_too_broad_2,
+         spectrum_too_narrow_2,
+         appropriateness_2,
+         antimicrobial_am_generic_name_3,
+         route_3,
+         number_of_doses_day_3,
+         indication_3,
+         diagnosis_3,
+         start_date_3,
+         antimicrobial_review_within_72hr_after_start_3,
+         antimicrobial_change_3,
+         no_of_missed_doses_3,
+         reason_for_missed_doses_3,
+         course_length_or_stop_date_documented_3,
+         guidance_compliance_1_6_3,
+         surgical_prophylaxis_for_more_than_24_hours_3,
+         allergy_mismatch_3,
+         microbiology_mismatch_3,
+         indication_does_not_require_any_antimicrobial_3,
+         incorrect_route_3,
+         incorrect_frequency_3,
+         spectrum_too_broad_3,
+         spectrum_too_narrow_3,
+         appropriateness_3,
+         hcai
+)
+
+```
+
+
+# Test code below
 
 ```{r Data cleansing}
 
@@ -98,7 +434,10 @@ wardPatientTable2 = wardPatientTable %>%
   unite("PCV/CVC_documentation_Correct", contains(c("about PVC", "cannula", "CVC_documentation")), remove = T, na.rm = T) %>%
   unite("urinary_cath_documentation_correct", contains(c("urinary catheters", "catheters in situ")), na.rm = T) %>%
   rename("neonatal birth weight" = `If neonate, record birth weight`) %>%
-  mutate(Name = str_replace_all(pattern = ",", replacement = " ", string = .$Name))
+  mutate(Name = str_replace_all(pattern = ",", replacement = " ", string = .$Name),
+         Antimicrobials = str_replace_all(.$Antimicrobials, replacement = "", pattern = "_"),
+         across(everything(), tolower))
+  
   
 #function for finding columns
 findSimilarColumnNames = function(dataframe, searchTerm){
@@ -108,7 +447,6 @@ findSimilarColumnNames = function(dataframe, searchTerm){
 
 findSimilarColumnNames(wardPatientTable, "")
 
-findSimilarColumnNames(wardPatientTable2, "urinary catheters")))
 
 names(select(wardPatientTable,(contains(c("about PVC", "cannula", "PCV/CVC_documentation_Correct")))))
 
@@ -116,6 +454,9 @@ names(select(wardPatientTable,(contains(c("about PVC", "cannula", "PCV/CVC_docum
 ```
 
 ```{r Seperate Abx sheets}
+
+# iterate thrugh sheets to get abx data, will need 2 seperate loops as the optional data starts in the 4th row 
+
 setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
 AbxList_1 = tibble()
 for (i in 1 : length(PPSFileList)){
@@ -129,10 +470,49 @@ for (i in 1 : length(PPSFileList)){
              )%>%
        filter(str_detect(.[1], "^[0-9]+$") |
            !is.na(.[2]))
-    if(exists("AbxList") == FALSE){
+    if(exists("AbxList_1") == FALSE){
       AbxList_1 = newSheet
     } else{
-      AbxList = bind_rows(AbxList_1, newSheet) %>%
+      AbxList_1 = bind_rows(AbxList_1, newSheet) %>%
+        remove_empty("cols")
+    }
+  }
+}
+
+AbxList_1_mod = AbxList_1 %>%
+  select(-contains("...")) %>%
+  unite("start_date", contains("date"), na.rm = T) %>%
+  unite("diagnosis", contains("diagnosis"), na.rm = T) %>%
+  unite("reason_document", contains("reason"), na.rm = T) %>%
+  mutate(Pat_id = str_c(`Patient MRN`, ward)) %>%
+   mutate(across(everything(), tolower))
+
+#note there are duplicates within the system
+
+AbxList_1_mod %>% mutate(MRN_abx = str_c(`Patient MRN`, `Antimicrobial (AM)                                  (generic name)`, start_date)) %>% select(MRN_abx) %>% group_by(MRN_abx) %>% tally() %>% arrange(desc(n))
+
+
+#get 2nd set of columns with the optional data
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxList_2 = tibble()
+for (i in 1 : length(PPSFileList)){
+  print(PPSFileList[i])
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    newSheet = read_excel(PPSFileList[i], sheet = "Antimicrobial use data", range = "h4:z60") %>%
+      mutate(ward = fileName,
+             across(.fns = as.character)
+             )%>%
+      for(j in 1: .$names){
+        print(names[i])
+      } %>%
+       filter(str_detect(.[1], "^[0-9]+$") |
+           !is.na(.[2]))
+    if(exists("AbxList_2") == FALSE){
+      AbxList_2 = newSheet
+    } else{
+      AbxList_2 = bind_rows(AbxList_2, newSheet) %>%
         remove_empty("cols")
     }
   }
@@ -151,9 +531,494 @@ newSheet %>%
            !is.na(Initials))
 ```
 
+
+List of wards required where urinary catheterisation mentioned
+```{r list of wards with urinary catheter documentation/CVC documentation}
+wardPatientTable %>% 
+  select(contains(c("document","recorded", "catheters")), ward) %>%
+  pivot_longer(cols = -ward, names_to = "field") %>%
+  filter(!is.na(value)) %>%
+  group_by(ward, field, value) %>%
+  tally() %>%
+  mutate(ward_total = sum(n)) %>%
+  slice(which.max(ward_total)) %>%
+  select(-n, -value) %>%
+  pivot_wider(values_from = ward_total, names_from = ward) %>%
+   arrange(desc(field)) %>%
+  mutate(across(everything(), ~ replace_na(.x, 0))) %>% 
+  write.csv2(file = "Cathether and CVC documentation fields table.csv")
+
+
+```
+
+
+
 Write to new documents for export
+```{r, include = FALSE}
+write.csv(wardPatientTable2, file = "PatientTable.csv")
+
+```
+
+```{r testing}
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxList_test = tibble()
+for (i in seq_along(PPSFileList)){
+  print(PPSFileList[i])
+  filePath = PPSFileList[i]
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    for(j in 2:4){ # iterate through the different row cut_offs
+    
+    print(sheetRange)
+    newSheet = read_excel(filePath, sheet = "Antimicrobial use data", range = sheetRange) %>%
+      mutate(ward = fileName,
+             row_num = j,
+            across(.fns = as.character)
+      ) %>%
+      rownames_to_column() %>%
+      select(-contains("...")) %>%
+      select(-matches("^[[:digit:]]+$", perl = F))
+    
+      mrn_table =  read_excel(filePath, sheet = "Antimicrobial use data", range = str_glue("a{j}:b60")) 
+         
+      
+      newSheet = bind_cols(mrn_table, newSheet)
+    
+      AbxList_test = bind_rows(AbxList_test,newSheet) 
+      
+      }
+  }
+}
+
+AbxList_2 = AbxList_2 %>%
+  select(-"Survey date:")
+
+AbxList_2 %>% remove_empty("rows", cutoff = 1)
+
+AbxList_2 %>% distinct(pick(-row_num),.keep_all = T) %>%
+  view()
+
+AbxList_2 %>%filter(
+  if_all(
+    -c(ward, rowname, row_num), 
+    ~ is.na(.x)
+  )
+  ) %>%
+  view()
+
+AbxList_2 %>%
+  filter(!is.na(...1) & ...1 != "Patient MRN") %>%
+  distinct(...1, `Ward /Code:`, .keep_all = T) %>%
+  view()
+
+
+			
+			
+			
+			
+
+                    
+
+
+
+
+#try extracting all and limitng columns thereafter
+                    
+
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxList_test = tibble()
+for (i in seq_along(PPSFileList)){
+  print(PPSFileList[i])
+  filePath = PPSFileList[i]
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    newSheet = read_excel(filePath, sheet = "Antimicrobial use data", range = "a1:z60") %>%
+    remove_empty(c("rows", "cols")) %>%
+      mutate(ward = fileName,
+            across(.fns = as.character)
+      )
+            
+    AbxList_test = bind_rows(AbxList_test, newSheet)
+      
+    
+  }
+}
+
+
+
+
+AbxList_test_cleaned = AbxList_test %>%
+  rename("Hosp No" = ...1,
+         "Antibiotic" = `***List each antibiotic and antifungal on a separate line and include MRN for each entry***`,
+        "Route" = ...3,
+        "Doses_per_day" = ...4,
+        "Indication" = ...5,
+        "Diagnosis" = ...6,
+        "Reason_documented" = ...7,
+        "AM_review" = ...8,
+        "Start_Date" = ...9,
+        "Indication_on_EPIC" = ...10,
+        "No_missed_doses" = `O P T I O N A L`,
+        "Reason_missed_doses" = ...12)
+  
+
+##? extract each header seperately
+newSheet %>%
+  select(!contains("...")) 
+
+newSheet %>%
+  select(contains("...")) %>%
+  row_to_names(2) %>%
+  select(where(is.na))
+
+newSheet %>%
+  select(if_any(everything(), is(na)) %>%
+  row_to_names(1)
+  )
+
+```
+
+```{r PPS survey table format}
+PPS_wizard_Tbble = wardPatientTable2 %>%
+  select( ward,
+          DoB,
+         `NHS no`,
+         `Hosp no`,
+         Sex,
+         Postcode,
+         `Adm. Date`,
+         Ethnicity,
+         Speciality,
+         `neonatal birth weight`,
+          `Surgery (since admission)`,
+         `NHSN surgical code (if required)`,
+         McCabe,
+         `Vaccinated against COVID-19?`,
+         CVC,
+         PVC,
+         `urinary catheter`,
+         Intubated,
+         `Allergies to any antimicrobial?`,
+         Antimicrobials,
+         HCAI
+        ) %>%
+  mutate(Pat_id = str_c(`Hosp no`, ward)) %>%
+  mutate(across(everything(), tolower))
+         
+#Check for duplicate patients
+PPS_wizard_Tbble %>%
+  group_by(`Hosp no`) %>%
+  tally() %>%
+  arrange(desc(n)) %>%
+  group_by(n) %>%
+  tally()  
+
+```
+
+```{r Join abx1 to PPS_Wizard_tibble}
+
+JointAbx_Pat = PPS_wizard_Tbble %>%
+  clean_names() %>%
+  left_join(AbxTest_3_cleaned, by = "pat_id") %>%
+  mutate(Antimicrobials = case_when(antimicrobials == "n" ~ "no",
+                                    antimicrobials == "y" ~ "yes",
+                                    TRUE~ antimicrobials))  %>% 
+  select(-`ward.y`,
+         Antimicrobials) %>%
+  mutate(across(.fns = ~str_replace(.,pattern = ",",replacement = " "))) %>%
+  mutate(sex = case_when(sex == "m" | sex == "male" ~ "Male",
+                         sex == "f" | sex == "female" ~ "Female"),
+         ethnicity_if_other = case_when(str_detect(ethnicity, "other")& 
+                                          (!str_detect(ethnicity, "black|asian|white|mixed")) ~ ethnicity
+                                        ),
+         ethnicity = case_when(str_detect(ethnicity, "white") ~ "White",
+                               str_detect(ethnicity, "asian") ~ "Asian or British Asian",
+                               str_detect(ethnicity, "black") ~ "Black, Africa, Caribbean or Black British",
+                               str_detect(ethnicity, "mixed") ~ "Mixed or Multiple Ethnic Groups",
+                               TRUE ~ ethnicity)
+  )
+
+#check abx matching
+JointAbx_Pat %>%
+  group_by(Antimicrobials, abx_missing =  is.na(`Antimicrobial (AM)                                  (generic name)`)) %>%
+  tally()
+
+JointAbx_Pat %>%
+  filter(Antimicrobials== "no" & !is.na(`Antimicrobial (AM)                                  (generic name)`)) %>%
+  view()
+
+```
+
+
+
+```{r try to iterate throgh each row for each antibiotic sheet}
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxNamesTib = tibble()
+for (i in seq_along(PPSFileList)){
+  filePath = PPSFileList[i]
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    newSheet = read_excel(filePath, sheet = "Antimicrobial use data")
+    for(j in seq_along(cell_names_list)){
+      for(k in 1:length(names(newSheet))){
+        if(cell_names_list[j] %in% newSheet[,k]){
+          rename(newSheet, cell_names_list[j] = names(newSheet)[k])
+        }
+      }
+    }
+  }
+}
+      
+            
+    
+      
+ 
+
+```
+
 ```{r}
-write.csv(wardPatientTable2, file = "PatientTable.csv", sep = "-")
+
+names_list = list()
+    for(j in seq_along(cell_names_list)){
+      print(cell_names_list[j])
+      for(k in 1:length(names(AbxList_test_cleaned))){ # this should be all the names for the sheet
+        if(cell_names_list[j] %in% AbxList_test_cleaned[k]){
+          print(cell_names_list[j])
+        }
+      }
+    }
+```
+```{r cycle through sheets}
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+
+for (i in 1:5){
+  filePath = PPSFileList[i]
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    sheet = read_excel(filePath, sheet = "Antimicrobial use data")
+    sheetName = str_glue("cycle_sheet{i}")
+    gdata::mv(from = "sheet", to = sheetName)
+  }
+}
+    
+
+
+```
+
+```{r AbxTest_3}
+# retest loop for abx data now sheets have been aligned to row 7
+setwd("N:/PHCML/Antimicrobial Stewardship/HCAI PPS survey/Combined_folder")
+AbxTest_3 = tibble()
+for (i in 1 : length(PPSFileList)){
+  print(PPSFileList[i])
+  fileName = str_split(PPSFileList[i], "/")[[1]][1]
+  print(fileName)
+  if(!(fileName %in% c("Lewin Rehab", "R2", "Sara"))){
+    newSheet = read_excel(PPSFileList[i], sheet = "Antimicrobial use data", range = "A7:Z60") %>%
+      remove_empty(c("cols", "rows"))%>%
+      mutate(ward = fileName,
+             across(.fns = as.character)
+             )%>%
+        filter(str_detect(.[1], "^[0-9]+$") |
+        !is.na(.[2]))
+      AbxTest_3 = bind_rows(AbxTest_3, newSheet) #%>%
+       # remove_empty("cols")
+        }
+}
+
+AbxTest_3_cleaned = AbxTest_3 %>%
+  unite("Notes", contains("..."), na.rm =T) %>%
+  unite("start_date", contains(c("Date of AM started", "start date")), na.rm = T) %>%
+  unite("diagnosis", contains("diagnosis"), na.rm = T) %>%
+  unite("reason_document", contains("reason for a"), na.rm = T) %>%
+  unite("indication_does_not_require_any_antimicrobial", contains("indication does"), na.rm = T) %>%
+  mutate(Pat_id = str_c(`Patient MRN`, ward)) %>%
+   mutate(across(everything(), tolower)) %>%
+  clean_names() %>%
+  group_by(pat_id) %>%
+  mutate(abx_num = row_number())
+
+AbxTest_3_cleaned = AbxTest_3_cleaned %>%
+unite("antimicrobial_change", contains("changed_reason"), na.rm = T) 
+
+```
+
+```{r Abx_Test_3 skim, include = FALSE}
+AbxTest_3_cleaned %>%
+  skimr::skim()
+```
+
+
+```{r Abx_3 integrity }
+
+
+AbxTest_3_cleaned  %>% 
+  filter(is.na(antimicrobial_review_within_72hr_after_start)) %>%
+  group_by(ward) %>%
+ tally()
+
+AbxTest_3_cleaned  %>% 
+  filter(is.na(spectrum_too_narrow)) %>%
+  group_by(ward) %>%
+ tally()
+
+AbxTest_3_cleaned %>%
+  group_by(antimicrobial_am_generic_name) %>%
+  tally() 
+
+AbxTest_3_cleaned %>%
+  group_by(route) %>%
+  tally()
+
+AbxTest_3_cleaned %>%
+  group_by(number_of_doses_day) %>%
+  tally()
+
+AbxTest_3_cleaned %>%
+  group_by(indication) %>%
+  tally()
+
+AbxTest_3_cleaned %>%
+  group_by(diagnosis) %>%
+  tally()
+
+AbxTest_3_cleaned %>%
+  group_by(reason_document) %>%
+  tally()
+
+```
+```{r test adding antibiotic course numbers}
+
+AbxTest_3_cleaned %>%
+  group_by(pat_id) %>%
+  mutate(id = row_number())
+
+
+
+```
+
+
+
+```{r AMU_function}
+
+amu = function(amuData){
+  amu_max = max(amuData$abx_num, na.rm = T) # get number of abx courses
+
+  for(i in 1:amu_max){ #interate through abx courses
+    abxData = amuData %>% 
+      filter(abx_num == i)
+    for(j in seq_along(names(abxData))){ # loop through the names in dataset
+      for(k in seq_along(abx_names)){ #loop through the target abx names
+        if(names(abxData[j] == abx_names[k])){ # check if dataset name matches target header
+          rename(amuData, str_glue("AMU_{i}_{names(abxData)[j]") := names(abxData[j]))
+        }
+      }
+    }
+  }  
+  
+}
+
+
+amu(a3_pts)
+
+#below seems to work!
+a3_pts %>%
+  #filter(abx_num ==1) %>%
+  pivot_wider(names_from = abx_num, values_from = abx_names_list) %>%
+  remove_empty("cols") %>%
+  write.csv2(file = "A3_PPS.csv")
+
+#format A3 list
+a3_pts_final = a3_pts %>%
+  mutate(survey_date = "20/09/2023",
+         Reporting_Organisation_Code = "RGT") %>%
+  group_by(patient_mrn) %>%
+  mutate(how_many_antimicrobials = max(abx_num)) %>%
+  pivot_wider(names_from = abx_num, values_from = abx_names_list) %>%
+  select(ward = ward.x,
+         do_b,
+         survey_date,
+         Reporting_Organisation_Code,
+         nhs_no,
+         hosp_no,
+         sex,
+         postcode,
+         adm_date,
+         ethnicity,
+         speciality,
+         surgery_since_admission,
+         mc_cabe,
+         vaccinated_against_covid_19,
+         cvc,
+         pvc,
+         urinary_catheter,
+         intubated,
+         allergies_to_any_antimicrobial,
+         antimicrobials,
+         how_many_antimicrobials,
+         antimicrobial_am_generic_name_1,
+         route_1,
+         number_of_doses_day_1,
+         indication_1,
+         diagnosis_1,
+         start_date_1,
+         antimicrobial_review_within_72hr_after_start_1,
+         antimicrobial_change_1,
+         no_of_missed_doses_1,
+         reason_for_missed_doses_1,
+         guidance_compliance_1_6_1,
+         surgical_prophylaxis_for_more_than_24_hours_1,
+         allergy_mismatch_1,
+         microbiology_mismatch_1,
+         indication_does_not_require_any_antimicrobial_1,
+         incorrect_route_1,
+         incorrect_frequency_1,
+         spectrum_too_broad_1,
+         spectrum_too_narrow_1,
+         appropriateness_1,
+         antimicrobial_am_generic_name_2,
+         route_2,
+         number_of_doses_day_2,
+         indication_2,
+         diagnosis_2,
+         start_date_2,
+         antimicrobial_review_within_72hr_after_start_2,
+         antimicrobial_change_2,
+         no_of_missed_doses_2,
+         reason_for_missed_doses_2,
+         guidance_compliance_1_6_2,
+         surgical_prophylaxis_for_more_than_24_hours_2,
+         allergy_mismatch_2,
+         microbiology_mismatch_2,
+         indication_does_not_require_any_antimicrobial_2,
+         incorrect_route_2,
+         incorrect_frequency_2,
+         spectrum_too_broad_2,
+         spectrum_too_narrow_2,
+         appropriateness_2
+)
+
+#fields missing: Approval given, duration, course length/stop date, duration incorrect
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+```
+
+```{r old cold}
 
 ```
 
